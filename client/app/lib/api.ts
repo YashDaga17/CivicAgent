@@ -110,8 +110,16 @@ export async function voiceToText(
   audioBlob: Blob,
   language: string = "en-IN"
 ): Promise<{ text: string; confidence: number; language: string }> {
+  const extension = audioBlob.type.includes("mp4")
+    ? "m4a"
+    : audioBlob.type.includes("ogg")
+      ? "ogg"
+      : audioBlob.type.includes("wav")
+        ? "wav"
+        : "webm";
+
   const form = new FormData();
-  form.append("audio", audioBlob, "recording.webm");
+  form.append("audio", audioBlob, `recording.${extension}`);
   form.append("language", language);
 
   const res = await fetch(`${API_BASE_URL}/api/voice`, {

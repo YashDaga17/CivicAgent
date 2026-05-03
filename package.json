@@ -1,0 +1,10 @@
+{
+  "name": "civicagent-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix client run start",
+    "lint": "npm --prefix client run lint"
+  }
+}

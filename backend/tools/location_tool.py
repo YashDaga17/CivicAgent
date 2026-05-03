@@ -78,38 +78,43 @@ def _normalize_state(raw: str) -> str | None:
     return None
 
 
+def _extract_state_from_text(raw: str) -> str | None:
+    """Infer a state from free-form text containing a state, city, or PIN code."""
+    for abbrev, full_name in _ABBREV_TO_STATE.items():
+        if re.search(rf"\b{re.escape(full_name)}\b", raw, re.IGNORECASE):
+            return full_name
+        if len(abbrev) == 2 and re.search(rf"\b{abbrev}\b", raw, re.IGNORECASE):
+            return full_name
+
+    pin_match = re.search(r"\b(\d{6})\b", raw)
+    if pin_match:
+        prefix = pin_match.group(1)[:3]
+        if prefix in _PIN_PREFIX_TO_STATE:
+            return _PIN_PREFIX_TO_STATE[prefix]
+
+    raw_lower = raw.lower()
+    for city, state in _CITY_TO_STATE.items():
+        if city in raw_lower:
+            return state
+
+    return None
+
+
 def resolve_location(
     location_hint: str | None = None,
     query_text: str = "",
 ) -> UserContext:
     """Resolve location from hint or query text. Returns UserContext."""
+    explicit_state = _extract_state_from_text(query_text)
+    if explicit_state:
+        logger.info("Location found in query text: %s", explicit_state)
+        return UserContext(state=explicit_state, voter_status="first-time")
+
     if location_hint:
-        state = _normalize_state(location_hint)
+        state = _normalize_state(location_hint) or _extract_state_from_text(location_hint)
         if state:
             logger.info("Location resolved from hint: %s -> %s", location_hint, state)
             return UserContext(state=state, voter_status="first-time")
 
-    for abbrev, full_name in _ABBREV_TO_STATE.items():
-        if re.search(rf"\b{re.escape(full_name)}\b", query_text, re.IGNORECASE):
-            logger.info("Location found in query text: %s", full_name)
-            return UserContext(state=full_name, voter_status="first-time")
-        if len(abbrev) == 2 and re.search(rf"\b{abbrev}\b", query_text):
-            logger.info("Abbreviation found: %s -> %s", abbrev, full_name)
-            return UserContext(state=full_name, voter_status="first-time")
-
-    pin_match = re.search(r"\b(\d{6})\b", query_text)
-    if pin_match:
-        prefix = pin_match.group(1)[:3]
-        if prefix in _PIN_PREFIX_TO_STATE:
-            state = _PIN_PREFIX_TO_STATE[prefix]
-            logger.info("PIN resolved: %s -> %s", pin_match.group(1), state)
-            return UserContext(state=state, voter_status="first-time")
-
-    query_lower = query_text.lower()
-    for city, state in _CITY_TO_STATE.items():
-        if city in query_lower:
-            logger.info("City found: %s -> %s", city, state)
-            return UserContext(state=state, voter_status="first-time")
-
-    logger.warning("Could not resolve location - defaulting to Maharashtra")
-    return UserContext(state="Maharashtra", voter_status="unknown")
+    logger.warning("Could not resolve location - using India-wide guidance")
+    return UserContext(state="India", voter_status="unknown")

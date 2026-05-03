@@ -1,7 +1,6 @@
 import os
 os.environ["USE_MOCK_MODE"] = "true"
 
-import pytest
 from fastapi.testclient import TestClient
 from main import app
 
@@ -15,8 +14,10 @@ def test_health_check():
 def test_languages():
     response = client.get("/api/languages")
     assert response.status_code == 200
-    assert "languages" in response.json()
-    assert "hi-IN" in response.json()["languages"]
+    body = response.json()
+    assert "languages" in body
+    codes = [language["code"] for language in body["languages"]]
+    assert "hi" in codes
 
 def test_chat_mock_mode_rate_limit():
     # Test rate limiter implicitly by hitting it 21 times (limit is 20/min)

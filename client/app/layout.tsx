@@ -1,21 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "CivicAgent — Election Process Guide",
   description:
-    "Your AI-powered assistant for understanding election timelines, voter registration, and voting procedures. Personalized guidance for every US state.",
+    "Your AI-powered assistant for understanding Indian election timelines, voter registration, and voting procedures. Personalized guidance for every state.",
   keywords: [
     "election",
     "voter registration",
@@ -26,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "CivicAgent — Election Process Guide",
     description:
-      "AI-powered election process assistant with personalized state-by-state timelines.",
+      "AI-powered Indian election process assistant with personalized state-by-state timelines.",
     type: "website",
   },
 };
@@ -37,10 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

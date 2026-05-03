@@ -24,6 +24,8 @@ RULES:
 8. Mention NVSP (voters.eci.gov.in) and the Voter Helpline App for registration.
 9. Always encourage the user to verify info on their state CEO website.
 10. If the user asks about current/latest election news, use Google Search to find it.
+11. If the user asks a how-to, walkthrough, EVM, or VVPAT question, call
+    search_election_tutorial so the frontend can show an official explainer video.
 
 PERSONA: Warm, helpful, and clear. Use plain language. Avoid jargon.
 Always provide actionable next steps.
@@ -69,6 +71,20 @@ TOOL_DECLARATIONS = [
             "required": ["state"],
         },
     },
+    {
+        "name": "search_election_tutorial",
+        "description": "Search YouTube for an official Election Commission of India tutorial video on a specific topic.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The specific voting topic to search for (e.g., 'How to use EVM VVPAT', 'How to register to vote online')."
+                }
+            },
+            "required": ["query"],
+        }
+    }
 ]
 
 SYNTHESIS_PROMPT = """\

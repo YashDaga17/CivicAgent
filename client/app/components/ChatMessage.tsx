@@ -12,6 +12,8 @@ import type { ChatMessage as ChatMessageType } from "../types";
 import ElectionTimeline from "./ElectionTimeline";
 import AudioButton from "./AudioButton";
 import TranslateMenu from "./TranslateMenu";
+import StateStats from "./StateStats";
+import VoterChecklist from "./VoterChecklist";
 
 const messageVariants = {
   hidden: { opacity: 0, y: 16, scale: 0.97 },
@@ -27,8 +29,33 @@ interface ChatMessageProps {
   message: ChatMessageType;
 }
 
+function TutorialEmbed({ videoId }: { videoId: string }) {
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="border-b border-border px-4 py-3 sm:px-5">
+        <p className="text-sm font-semibold text-text-primary">
+          Official ECI tutorial
+        </p>
+        <p className="mt-1 text-xs text-text-muted">
+          A guided explainer for this task, directly inside the chat.
+        </p>
+      </div>
+      <div className="aspect-video w-full bg-black">
+        <iframe
+          src={`https://www.youtube.com/embed/${videoId}`}
+          title="Official Election Commission of India tutorial"
+          className="h-full w-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function ChatMessageBubble({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const hasRichData = !isUser && Boolean(message.data?.steps.length);
   const [displayText, setDisplayText] = useState<string | null>(null);
 
   const summaryText = displayText ?? message.content;
@@ -64,7 +91,15 @@ export default function ChatMessageBubble({ message }: ChatMessageProps) {
       </div>
 
       {/* Content */}
-      <div className={`flex flex-col max-w-[85%] sm:max-w-[75%] ${isUser ? "items-end" : "items-start"}`}>
+      <div
+        className={`flex flex-col ${
+          isUser
+            ? "items-end max-w-[85%] sm:max-w-[75%]"
+            : hasRichData
+              ? "items-start w-full"
+              : "items-start max-w-[85%] sm:max-w-[75%]"
+        }`}
+      >
         {/* Loading indicator */}
         {message.isLoading && (
           <div className="chat-bubble-bot p-4">
@@ -107,17 +142,45 @@ export default function ChatMessageBubble({ message }: ChatMessageProps) {
 
             {/* Election Timeline */}
             {message.data && message.data.steps.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.4 }}
-                className="glass-card p-4 sm:p-6"
-              >
-                <ElectionTimeline
-                  steps={message.data.steps}
-                  userContext={message.data.user_context}
-                />
-              </motion.div>
+              <div className="space-y-4">
+                {message.data.video_id && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2, duration: 0.4 }}
+                  >
+                    <TutorialEmbed videoId={message.data.video_id} />
+                  </motion.div>
+                )}
+
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3, duration: 0.4 }}
+                  className="glass-card p-4 sm:p-6"
+                >
+                  <ElectionTimeline
+                    steps={message.data.steps}
+                    userContext={message.data.user_context}
+                  />
+                </motion.div>
+
+                {message.data.user_context.state !== "India" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4, duration: 0.4 }}
+                    className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
+                  >
+                    <div className="glass-card p-4 sm:p-5">
+                      <StateStats state={message.data.user_context.state} />
+                    </div>
+                    <div className="glass-card p-4 sm:p-5">
+                      <VoterChecklist state={message.data.user_context.state} />
+                    </div>
+                  </motion.div>
+                )}
+              </div>
             )}
           </div>
         )}

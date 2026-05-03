@@ -20,6 +20,7 @@ export interface ChatResponse {
   user_context: UserContext;
   steps: TimelineStep[];
   summary: string;
+  video_id?: string | null;
 }
 
 export interface ChatRequest {

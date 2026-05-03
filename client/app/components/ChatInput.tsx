@@ -13,11 +13,18 @@ import { geocodeLocation } from "../lib/api";
 interface ChatInputProps {
   onSend: (message: string) => void;
   onLocationDetected?: (state: string, district: string | null) => void;
+  detectedLocation?: { state: string; district: string | null } | null;
   disabled?: boolean;
   isLoading?: boolean;
 }
 
-export default function ChatInput({ onSend, onLocationDetected, disabled, isLoading }: ChatInputProps) {
+export default function ChatInput({
+  onSend,
+  onLocationDetected,
+  detectedLocation,
+  disabled,
+  isLoading,
+}: ChatInputProps) {
   const [value, setValue] = useState("");
   const [locating, setLocating] = useState(false);
   const [locStatus, setLocStatus] = useState<string | null>(null);
@@ -53,39 +60,39 @@ export default function ChatInput({ onSend, onLocationDetected, disabled, isLoad
       const newVal = prev ? `${prev} ${text}` : text;
       return newVal;
     });
-    // Auto-focus the textarea
-    textareaRef.current?.focus();
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+    });
   }, []);
 
   // Browser GPS → Geocoding API → state
   const handleDetectLocation = useCallback(async () => {
     if (!navigator.geolocation) {
-      setLocStatus("GPS not supported");
+      setLocStatus("Location is not supported in this browser");
       setTimeout(() => setLocStatus(null), 3000);
       return;
     }
 
     setLocating(true);
-    setLocStatus("Detecting...");
+    setLocStatus("Detecting your state...");
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
           const result = await geocodeLocation(pos.coords.latitude, pos.coords.longitude);
-          setLocStatus(`📍 ${result.state}`);
+          setLocStatus(`Detected ${result.state}`);
           if (onLocationDetected) {
             onLocationDetected(result.state, result.district);
           }
-          // Also insert as context in chat
-          setValue((prev) =>
-            prev
-              ? `${prev} (I'm in ${result.state})`
-              : `I'm located in ${result.state}. What's the election timeline here?`
-          );
+          textareaRef.current?.focus();
           setTimeout(() => setLocStatus(null), 5000);
         } catch (err) {
           console.error("Geocode error:", err);
-          setLocStatus("Location failed");
+          setLocStatus("Could not map your location to a state");
           setTimeout(() => setLocStatus(null), 3000);
         } finally {
           setLocating(false);
@@ -94,12 +101,17 @@ export default function ChatInput({ onSend, onLocationDetected, disabled, isLoad
       (err) => {
         console.error("GPS error:", err);
         setLocating(false);
-        setLocStatus("Location denied");
+        setLocStatus("Location permission denied");
         setTimeout(() => setLocStatus(null), 3000);
       },
       { enableHighAccuracy: false, timeout: 10000 }
     );
   }, [onLocationDetected]);
+
+  const hasDetectedLocation = Boolean(detectedLocation?.state);
+  const locationLabel = detectedLocation
+    ? `Detected location: ${detectedLocation.state}${detectedLocation.district ? ` · ${detectedLocation.district}` : ""}`
+    : null;
 
   return (
     <div className="w-full" role="form" aria-label="Chat input">
@@ -115,13 +127,13 @@ export default function ChatInput({ onSend, onLocationDetected, disabled, isLoad
           disabled={locating || disabled}
           className={`flex h-10 w-10 items-center justify-center rounded-xl shrink-0
                      transition-all duration-200 cursor-pointer
-                     ${locStatus?.startsWith("📍")
+                     ${locStatus?.startsWith("Detected") || hasDetectedLocation
                        ? "bg-green-500/15 text-green-400"
                        : "bg-bg-card text-text-secondary hover:text-primary-light hover:bg-primary/10"
                      }
                      disabled:opacity-40 disabled:cursor-not-allowed`}
           aria-label="Detect my location"
-          title={locStatus || "Auto-detect my state via GPS"}
+          title={locStatus || locationLabel || "Auto-detect my state via GPS"}
         >
           {locating ? (
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -140,7 +152,7 @@ export default function ChatInput({ onSend, onLocationDetected, disabled, isLoad
           onChange={handleInput}
           onKeyDown={handleKeyDown}
           disabled={disabled || isLoading}
-          placeholder="Ask about elections, Voter ID, timelines... or use 🎙️ voice"
+          placeholder="Ask about voting, registration, polling day, or use voice"
           rows={1}
           className="flex-1 resize-none bg-transparent text-sm sm:text-base text-text-primary
                      placeholder:text-text-muted outline-none py-2 px-2 sm:px-3
@@ -173,8 +185,13 @@ export default function ChatInput({ onSend, onLocationDetected, disabled, isLoad
       {/* Status bar */}
       <div className="mt-2 flex items-center justify-center gap-3 text-xs text-text-muted">
         {locStatus && (
-          <span className={locStatus.startsWith("📍") ? "text-green-400 font-medium" : "text-text-muted"}>
+          <span className={locStatus.startsWith("Detected") ? "text-green-400 font-medium" : "text-text-muted"}>
             {locStatus}
+          </span>
+        )}
+        {!locStatus && locationLabel && (
+          <span className="text-green-400/90">
+            {locationLabel} · used as context unless you ask about another state
           </span>
         )}
         <span>

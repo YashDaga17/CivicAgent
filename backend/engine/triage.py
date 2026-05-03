@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 
 # Cache for query results (Efficiency)
 query_cache = TTLCache(maxsize=100, ttl=300)
+_TUTORIAL_KEYWORDS = (
+    "how to",
+    "how do i",
+    "tutorial",
+    "step by step",
+    "guide me",
+    "show me",
+    "evm",
+    "vvpat",
+)
 
 
 # ── Tool dispatch map ────────────────────────────────────────────────────────
@@ -46,8 +56,33 @@ def _dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             "guidelines": guidelines,
         }
 
+    if name == "search_election_tutorial":
+        from tools.youtube_tool import search_election_tutorial
+        video_id = search_election_tutorial(query=args["query"])
+        return {"video_id": video_id}
+
     logger.warning("Unknown tool requested: %s", name)
     return {"error": f"Unknown tool: {name}"}
+
+
+def _should_fetch_tutorial(query: str) -> bool:
+    """Return True when the user is asking for a walkthrough or explainer."""
+    query_lower = query.lower()
+    return any(keyword in query_lower for keyword in _TUTORIAL_KEYWORDS)
+
+
+def _maybe_attach_tutorial(request: ChatRequest, video_id: str | None) -> str | None:
+    """Attach an official tutorial video when the query is instructional."""
+    if video_id or not _should_fetch_tutorial(request.query):
+        return video_id
+
+    try:
+        from tools.youtube_tool import search_election_tutorial
+
+        return search_election_tutorial(query=request.query)
+    except Exception as exc:
+        logger.warning("Tutorial lookup failed: %s", exc)
+        return video_id
 
 
 # ── Gemini via API Key (google-generativeai) ─────────────────────────────────
@@ -81,6 +116,7 @@ def _run_with_api_key(request: ChatRequest) -> ChatResponse:
     # Agentic loop
     user_context: UserContext | None = None
     all_steps: list[TimelineStep] = []
+    video_id: str | None = None
     max_turns = 5
 
     for _ in range(max_turns):
@@ -106,6 +142,8 @@ def _run_with_api_key(request: ChatRequest) -> ChatResponse:
                 user_context = UserContext(**result)
             elif tool_name == "retrieve_election_data" and "error" not in result:
                 all_steps = [TimelineStep(**s) for s in result.get("steps", [])]
+            elif tool_name == "search_election_tutorial" and "video_id" in result:
+                video_id = result["video_id"]
 
             responses.append(
                 genai.protos.Part(
@@ -130,11 +168,13 @@ def _run_with_api_key(request: ChatRequest) -> ChatResponse:
         )
     if not all_steps:
         all_steps, _ = retrieve_election_data(state=user_context.state)
+    video_id = _maybe_attach_tutorial(request, video_id)
 
     return ChatResponse(
         user_context=user_context,
         steps=all_steps,
         summary=summary.strip() or _generate_fallback_summary(user_context, all_steps),
+        video_id=video_id,
     )
 
 
@@ -175,6 +215,7 @@ def _run_with_vertex(request: ChatRequest) -> ChatResponse:
 
     user_context: UserContext | None = None
     all_steps: list[TimelineStep] = []
+    video_id: str | None = None
     max_turns = 5
 
     for _ in range(max_turns):
@@ -199,6 +240,8 @@ def _run_with_vertex(request: ChatRequest) -> ChatResponse:
                 user_context = UserContext(**result)
             elif tool_name == "retrieve_election_data" and "error" not in result:
                 all_steps = [TimelineStep(**s) for s in result.get("steps", [])]
+            elif tool_name == "search_election_tutorial" and "video_id" in result:
+                video_id = result["video_id"]
 
             function_responses.append(
                 Part.from_function_response(
@@ -222,11 +265,13 @@ def _run_with_vertex(request: ChatRequest) -> ChatResponse:
         )
     if not all_steps:
         all_steps, _ = retrieve_election_data(state=user_context.state)
+    video_id = _maybe_attach_tutorial(request, video_id)
 
     return ChatResponse(
         user_context=user_context,
         steps=all_steps,
         summary=summary.strip() or _generate_fallback_summary(user_context, all_steps),
+        video_id=video_id,
     )
 
 
@@ -234,6 +279,13 @@ def _run_with_vertex(request: ChatRequest) -> ChatResponse:
 
 def _generate_fallback_summary(ctx: UserContext, steps: list[TimelineStep]) -> str:
     """Generate a helpful summary without Gemini."""
+    if ctx.state == "India":
+        return (
+            "I can help with the election process across India, but I need your state "
+            "to personalize deadlines, polling guidance, and official links. Tell me "
+            "your state, city, or PIN code and I will tailor the next response."
+        )
+
     status_msg = {
         "first-time": "As a first-time voter, ",
         "returning": "Welcome back! ",
@@ -261,6 +313,7 @@ def _run_fallback(request: ChatRequest) -> ChatResponse:
         user_context=user_context,
         steps=steps,
         summary=_generate_fallback_summary(user_context, steps),
+        video_id=_maybe_attach_tutorial(request, None),
     )
 
 
@@ -298,4 +351,3 @@ async def process_query(request: ChatRequest) -> ChatResponse:
     except Exception as exc:
         logger.warning("Gemini triage failed (Quota/API Error), using fallback: %s", exc)
         return _run_fallback(request)
-

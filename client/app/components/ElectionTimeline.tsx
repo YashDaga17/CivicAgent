@@ -7,7 +7,7 @@
  * staggered entrance, expandable cards, and action links.
  */
 
-import { useState } from "react";
+import { createElement, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ClipboardCheck,
@@ -44,6 +44,57 @@ function getStepIcon(title: string): React.ElementType {
     if (lower.includes(key)) return icon;
   }
   return CalendarDays;
+}
+
+const OFFICIAL_STATE_PORTALS: Record<string, string> = {
+  Karnataka: "https://ceokarnataka.kar.nic.in/",
+  Delhi: "https://ceodelhi.gov.in/",
+  "Tamil Nadu": "https://www.elections.tn.gov.in/",
+  "Uttar Pradesh": "https://ceouttarpradesh.nic.in/",
+  "West Bengal": "https://ceowestbengal.nic.in/",
+  Kerala: "https://www.ceo.kerala.gov.in/",
+  Gujarat: "https://ceo.gujarat.gov.in/",
+};
+
+function getOfficialActionLink(step: TimelineStep, userContext: UserContext): string {
+  const lower = step.title.toLowerCase();
+  const statePortal = OFFICIAL_STATE_PORTALS[userContext.state] ?? step.action_link;
+
+  if (lower.includes("registration") || lower.includes("form 6")) {
+    return "https://voters.eci.gov.in/";
+  }
+
+  if (lower.includes("polling")) {
+    return "https://electoralsearch.eci.gov.in/";
+  }
+
+  if (
+    lower.includes("nomination") ||
+    lower.includes("withdrawal") ||
+    lower.includes("campaign")
+  ) {
+    return statePortal || "https://eci.gov.in/";
+  }
+
+  return step.action_link || statePortal || "https://eci.gov.in/";
+}
+
+function getActionLabel(step: TimelineStep): string {
+  const lower = step.title.toLowerCase();
+
+  if (lower.includes("registration") || lower.includes("form 6")) {
+    return "Register Online";
+  }
+
+  if (lower.includes("polling")) {
+    return "Find Booth and Roll Details";
+  }
+
+  if (lower.includes("counting") || lower.includes("results")) {
+    return "View Official Results Hub";
+  }
+
+  return "Open Official Guidance";
 }
 
 // ── Step status ─────────────────────────────────────────────────────────────
@@ -110,19 +161,21 @@ const expandVariants = {
 
 interface TimelineStepCardProps {
   step: TimelineStep;
-  index: number;
+  userContext: UserContext;
   isExpanded: boolean;
   onToggle: () => void;
 }
 
 function TimelineStepCard({
   step,
-  index,
+  userContext,
   isExpanded,
   onToggle,
 }: TimelineStepCardProps) {
   const Icon = getStepIcon(step.title);
   const status = getStepStatus(step.date);
+  const actionUrl = getOfficialActionLink(step, userContext);
+  const actionLabel = getActionLabel(step);
 
   const dotColorClass =
     status === "past"
@@ -149,7 +202,10 @@ function TimelineStepCard({
           variants={dotVariants}
           className={`z-10 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full ${dotColorClass} ${dotExtraClass}`}
         >
-          <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" aria-hidden="true" />
+          {createElement(Icon, {
+            className: "h-5 w-5 sm:h-6 sm:w-6 text-white",
+            "aria-hidden": true,
+          })}
         </motion.div>
         {/* Connecting line (hidden on last item via parent) */}
         <div className="timeline-line w-0.5 grow" aria-hidden="true" />
@@ -221,9 +277,9 @@ function TimelineStepCard({
                   </p>
                   <AudioButton text={`${step.title}. ${step.date}. ${step.description}`} />
                 </div>
-                {step.action_link && (
+                {actionUrl && (
                   <a
-                    href={step.action_link}
+                    href={actionUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-3 inline-flex items-center gap-2 rounded-lg bg-primary/10 px-4 py-2.5
@@ -232,7 +288,7 @@ function TimelineStepCard({
                     aria-label={`Take action: ${step.title} — opens in new tab`}
                   >
                     <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                    Take Action
+                    {actionLabel}
                   </a>
                 )}
               </div>
@@ -323,11 +379,11 @@ export default function ElectionTimeline({
         role="list"
         aria-label="Election process steps"
       >
-        {steps.map((step, index) => (
+        {steps.map((step) => (
           <TimelineStepCard
             key={step.step}
             step={step}
-            index={index}
+            userContext={userContext}
             isExpanded={expandedSteps.has(step.step)}
             onToggle={() => toggleStep(step.step)}
           />

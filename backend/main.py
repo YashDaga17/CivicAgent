@@ -179,8 +179,10 @@ async def get_languages() -> dict:
 @limiter.limit("20/minute")
 async def geocode(request: Request, lat: float = Form(...), lng: float = Form(...)) -> dict:
     """Reverse geocode browser GPS coordinates to Indian state."""
-    from tools.geocoding_tool import geocode_coordinates
-    from tools.location_tool import resolve_location
+    from tools.geocoding_tool import (
+        approximate_state_from_coordinates,
+        geocode_coordinates,
+    )
 
     result = geocode_coordinates(lat, lng)
     if result and result.get("state"):
@@ -191,14 +193,19 @@ async def geocode(request: Request, lat: float = Form(...), lng: float = Form(..
             "source": "geocoding_api",
         }
 
-    # Fallback to local lookup if geocoding fails
-    ctx = resolve_location(location_hint=None, query_text="")
-    return {
-        "state": ctx.state,
-        "district": ctx.district,
-        "formatted_address": "",
-        "source": "fallback",
-    }
+    approximate = approximate_state_from_coordinates(lat, lng)
+    if approximate and approximate.get("state"):
+        return {
+            "state": approximate["state"],
+            "district": approximate.get("district"),
+            "formatted_address": approximate.get("formatted_address", ""),
+            "source": "approximate_bounds",
+        }
+
+    raise HTTPException(
+        status_code=404,
+        detail="Could not determine your state from the current coordinates.",
+    )
 
 
 @app.post("/api/voice")
@@ -208,8 +215,6 @@ async def voice_to_text(request: Request, audio: UploadFile = File(...), languag
     Convert voice audio to text using Google Cloud Speech-to-Text.
     Accepts audio files (webm, wav, mp3) from the browser's MediaRecorder.
     """
-    import base64
-
     audio_bytes = await audio.read()
     if len(audio_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty audio file")
@@ -320,4 +325,3 @@ async def election_news(state: str = "India"):
     except Exception as exc:
         logger.error("News fetch failed: %s", exc)
         raise HTTPException(status_code=503, detail=f"Could not fetch news: {str(exc)}")
-

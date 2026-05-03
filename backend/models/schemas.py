@@ -70,6 +70,10 @@ class ChatResponse(BaseModel):
         ...,
         description="A short, empathetic text summary of the guidance provided.",
     )
+    video_id: str | None = Field(
+        default=None,
+        description="Optional YouTube video ID for an official ECI tutorial.",
+    )
 
 
 # ── Text-to-Speech ──────────────────────────────────────────────────────────

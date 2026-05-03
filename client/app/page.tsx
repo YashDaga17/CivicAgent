@@ -23,6 +23,11 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+interface DetectedLocation {
+  state: string;
+  district: string | null;
+}
+
 // ── Page Component ──────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -30,6 +35,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [detectedLocation, setDetectedLocation] = useState<DetectedLocation | null>(null);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -101,7 +107,10 @@ export default function HomePage() {
       setIsLoading(true);
 
       try {
-        const response: ChatResponse = await sendChatMessage({ query });
+        const response: ChatResponse = await sendChatMessage({
+          query,
+          location_hint: detectedLocation?.state,
+        });
 
         // Replace loading message with real response
         const assistantMsg: ChatMessage = {
@@ -115,6 +124,12 @@ export default function HomePage() {
         setMessages((prev) =>
           prev.map((m) => (m.id === loadingMsg.id ? assistantMsg : m))
         );
+        if (!detectedLocation && response.user_context.state !== "India") {
+          setDetectedLocation({
+            state: response.user_context.state,
+            district: response.user_context.district,
+          });
+        }
         setIsConnected(true);
       } catch (error) {
         console.error("Chat error:", error);
@@ -135,7 +150,14 @@ export default function HomePage() {
         setIsLoading(false);
       }
     },
-    [isLoading]
+    [detectedLocation, isLoading]
+  );
+
+  const handleLocationDetected = useCallback(
+    (state: string, district: string | null) => {
+      setDetectedLocation({ state, district });
+    },
+    []
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -195,6 +217,13 @@ export default function HomePage() {
                     procedures, or Voter ID — personalized to your state in India.
                   </p>
 
+                  {detectedLocation && (
+                    <div className="mb-6 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-sm text-primary-light">
+                      Detected location: {detectedLocation.state}
+                      {detectedLocation.district ? ` · ${detectedLocation.district}` : ""}
+                    </div>
+                  )}
+
                   <SuggestedPrompts onSelect={handleSend} />
                 </motion.div>
               )}
@@ -245,7 +274,12 @@ export default function HomePage() {
       {/* Input bar */}
       <div className="border-t border-border bg-bg-primary/80 backdrop-blur-xl">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 py-4">
-          <ChatInput onSend={handleSend} isLoading={isLoading} />
+          <ChatInput
+            onSend={handleSend}
+            onLocationDetected={handleLocationDetected}
+            detectedLocation={detectedLocation}
+            isLoading={isLoading}
+          />
         </div>
       </div>
     </div>

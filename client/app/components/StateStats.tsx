@@ -24,7 +24,23 @@ interface StateStatsProps {
 
 export default function StateStats({ state }: StateStatsProps) {
   const data = STATE_DATA[state];
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div
+        className="rounded-xl border border-border bg-bg-card/40 p-4"
+        role="note"
+        aria-label={`${state} election statistics`}
+      >
+        <p className="text-sm font-semibold text-text-primary">
+          {state} quick facts
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-text-muted">
+          We do not have packaged stats for this state yet, but the official
+          guidance and checklist below still work for the election process.
+        </p>
+      </div>
+    );
+  }
 
   const stats = [
     { icon: Building2, label: "Lok Sabha", value: `${data.seats_ls} seats`, color: "text-primary-light" },

@@ -7,7 +7,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, MicOff, Loader2, Square } from "lucide-react";
+import { Mic, Loader2, Square } from "lucide-react";
 import { voiceToText } from "../lib/api";
 
 interface VoiceInputProps {
@@ -15,16 +15,121 @@ interface VoiceInputProps {
   disabled?: boolean;
 }
 
+interface SpeechRecognitionResultLike {
+  readonly transcript: string;
+}
+
+interface SpeechRecognitionEventLike {
+  readonly results: ArrayLike<ArrayLike<SpeechRecognitionResultLike>>;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  readonly error: string;
+}
+
+interface BrowserSpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface BrowserSpeechRecognitionConstructor {
+  new (): BrowserSpeechRecognition;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  }
+}
+
 export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  const setTemporaryError = useCallback((message: string) => {
+    setError(message);
+    window.setTimeout(() => setError(null), 3000);
+  }, []);
+
+  const stopStreamTracks = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }, []);
 
   const startRecording = useCallback(async () => {
     setError(null);
+
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition ?? window.webkitSpeechRecognition;
+
+    if (SpeechRecognitionCtor) {
+      try {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-IN";
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .map((result) => result[0]?.transcript ?? "")
+            .join(" ")
+            .trim();
+
+          recognitionRef.current = null;
+          setIsRecording(false);
+
+          if (transcript) {
+            onTranscript(transcript);
+            return;
+          }
+
+          setTemporaryError("Could not hear anything clearly");
+        };
+
+        recognition.onerror = (event) => {
+          recognitionRef.current = null;
+          setIsRecording(false);
+          setTemporaryError(
+            event.error === "not-allowed"
+              ? "Microphone permission denied"
+              : "Voice input is unavailable right now"
+          );
+        };
+
+        recognition.onend = () => {
+          recognitionRef.current = null;
+          setIsRecording(false);
+        };
+
+        recognitionRef.current = recognition;
+        setIsRecording(true);
+        recognition.start();
+        return;
+      } catch (err) {
+        console.error("Browser speech recognition failed, falling back:", err);
+      }
+    }
+
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setTemporaryError("Voice input is not supported in this browser");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 16000,
@@ -33,12 +138,19 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           noiseSuppression: true,
         },
       });
+      streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm",
-      });
+      const mimeType =
+        [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+          "audio/ogg;codecs=opus",
+        ].find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
 
       chunksRef.current = [];
 
@@ -47,15 +159,16 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       };
 
       mediaRecorder.onstop = async () => {
-        // Stop all tracks
-        stream.getTracks().forEach((t) => t.stop());
+        stopStreamTracks();
 
         if (chunksRef.current.length === 0) {
           setIsRecording(false);
           return;
         }
 
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, {
+          type: mimeType || chunksRef.current[0]?.type || "audio/webm",
+        });
         setIsProcessing(true);
         setIsRecording(false);
 
@@ -64,13 +177,11 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           if (result.text) {
             onTranscript(result.text);
           } else {
-            setError("Couldn't catch that. Try again?");
-            setTimeout(() => setError(null), 3000);
+            setTemporaryError("Could not catch that. Try again");
           }
         } catch (err) {
           console.error("STT error:", err);
-          setError("Voice service unavailable");
-          setTimeout(() => setError(null), 3000);
+          setTemporaryError("Voice service unavailable");
         } finally {
           setIsProcessing(false);
         }
@@ -81,12 +192,19 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       setIsRecording(true);
     } catch (err) {
       console.error("Mic access denied:", err);
-      setError("Microphone access denied");
-      setTimeout(() => setError(null), 3000);
+      stopStreamTracks();
+      setTemporaryError("Microphone access denied");
     }
-  }, [onTranscript]);
+  }, [onTranscript, setTemporaryError, stopStreamTracks]);
 
   const stopRecording = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsRecording(false);
+      return;
+    }
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
@@ -149,7 +267,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
             className={`absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium
               ${isRecording ? "bg-red-500/15 text-red-400" : "bg-red-500/10 text-red-400"}`}
           >
-            {isRecording ? "🎙️ Listening..." : error}
+            {isRecording ? "Listening..." : error}
           </motion.span>
         )}
       </AnimatePresence>

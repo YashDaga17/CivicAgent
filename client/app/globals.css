@@ -47,8 +47,8 @@
   --color-glass-border: rgba(139, 147, 176, 0.08);
 
   /* Fonts */
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Avenir Next", "Segoe UI", "Noto Sans", sans-serif;
+  --font-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
 
   /* Spacing */
   --radius-sm: 0.5rem;

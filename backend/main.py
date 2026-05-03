@@ -12,13 +12,15 @@ Exposes:
     GET  /api/health     → Liveness check with service status
 """
 
-from __future__ import annotations
-
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from config import settings
 from engine.triage import process_query
@@ -68,6 +70,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate Limiting
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Middlewares
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -80,7 +89,7 @@ app.add_middleware(
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
-async def health_check():
+async def health_check() -> dict:
     """Liveness probe with service status overview."""
     gemini_status = "mock"
     if not settings.use_mock_mode:
@@ -107,10 +116,11 @@ async def health_check():
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+@limiter.limit("20/minute")
+async def chat(request: Request, chat_req: ChatRequest) -> ChatResponse:
     """Process a voter query through the agentic triage engine."""
     try:
-        response = await process_query(request)
+        response = await process_query(chat_req)
         logger.info(
             "Chat response for state=%s (%d steps)",
             response.user_context.state,
@@ -123,11 +133,12 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/api/tts", response_model=TTSResponse)
-async def text_to_speech(request: TTSRequest):
+@limiter.limit("30/minute")
+async def text_to_speech(request: Request, tts_req: TTSRequest) -> TTSResponse:
     """Convert text to speech using Google Cloud Text-to-Speech."""
     from tools.tts_tool import synthesize_speech
 
-    audio = synthesize_speech(text=request.text, language_code=request.language_code)
+    audio = synthesize_speech(text=tts_req.text, language_code=tts_req.language_code)
     if audio is None:
         raise HTTPException(
             status_code=503,
@@ -142,29 +153,31 @@ async def text_to_speech(request: TTSRequest):
 
 
 @app.post("/api/translate", response_model=TranslateResponse)
-async def translate(request: TranslateRequest):
+@limiter.limit("50/minute")
+async def translate(request: Request, trans_req: TranslateRequest) -> TranslateResponse:
     """Translate text to an Indian regional language."""
     from tools.translate_tool import translate_text
 
     translated, source = translate_text(
-        text=request.text,
-        target_language=request.target_language,
+        text=trans_req.text,
+        target_language=trans_req.target_language,
     )
     return TranslateResponse(
         translated_text=translated,
         source_language=source,
-        target_language=request.target_language,
+        target_language=trans_req.target_language,
     )
 
 
 @app.get("/api/languages")
-async def get_languages():
+async def get_languages() -> dict:
     """List supported Indian languages for translation."""
     return {"languages": SUPPORTED_LANGUAGES}
 
 
 @app.post("/api/geocode")
-async def geocode(lat: float = Form(...), lng: float = Form(...)):
+@limiter.limit("20/minute")
+async def geocode(request: Request, lat: float = Form(...), lng: float = Form(...)) -> dict:
     """Reverse geocode browser GPS coordinates to Indian state."""
     from tools.geocoding_tool import geocode_coordinates
     from tools.location_tool import resolve_location
@@ -189,7 +202,8 @@ async def geocode(lat: float = Form(...), lng: float = Form(...)):
 
 
 @app.post("/api/voice")
-async def voice_to_text(audio: UploadFile = File(...), language: str = Form(default="en-IN")):
+@limiter.limit("15/minute")
+async def voice_to_text(request: Request, audio: UploadFile = File(...), language: str = Form(default="en-IN")) -> dict:
     """
     Convert voice audio to text using Google Cloud Speech-to-Text.
     Accepts audio files (webm, wav, mp3) from the browser's MediaRecorder.

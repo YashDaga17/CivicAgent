@@ -233,6 +233,15 @@ export default function HomePage() {
         </AnimatePresence>
       </main>
 
+      {/* Screen reader announcements */}
+      <div aria-live="polite" className="sr-only">
+        {isLoading 
+          ? "Assistant is typing..." 
+          : messages.length > 0 && messages[messages.length - 1].role === "assistant" 
+            ? "Assistant has replied." 
+            : ""}
+      </div>
+
       {/* Input bar */}
       <div className="border-t border-border bg-bg-primary/80 backdrop-blur-xl">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 py-4">

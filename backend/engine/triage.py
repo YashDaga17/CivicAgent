@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from cachetools import TTLCache
 
 from config import settings
 from models.schemas import ChatRequest, ChatResponse, TimelineStep, UserContext
@@ -22,6 +23,9 @@ from tools.location_tool import resolve_location
 from tools.rag_tool import retrieve_election_data
 
 logger = logging.getLogger(__name__)
+
+# Cache for query results (Efficiency)
+query_cache = TTLCache(maxsize=100, ttl=300)
 
 
 # ── Tool dispatch map ────────────────────────────────────────────────────────
@@ -276,14 +280,22 @@ async def process_query(request: ChatRequest) -> ChatResponse:
         return _run_fallback(request)
 
     # Prefer API key mode (simpler), then Vertex AI
+    cache_key = f"{request.query}_{request.location_hint}"
+    if cache_key in query_cache:
+        logger.info("Returning cached response for query")
+        return query_cache[cache_key]
+
     try:
         if settings.google_api_key:
             logger.info("Using Gemini via API key")
-            return _run_with_api_key(request)
+            response = _run_with_api_key(request)
         else:
             logger.info("Using Gemini via Vertex AI (project=%s)", settings.gcp_project_id)
-            return _run_with_vertex(request)
+            response = _run_with_vertex(request)
+        
+        query_cache[cache_key] = response
+        return response
     except Exception as exc:
-        logger.error("Gemini triage failed, using fallback: %s", exc)
+        logger.warning("Gemini triage failed (Quota/API Error), using fallback: %s", exc)
         return _run_fallback(request)
 

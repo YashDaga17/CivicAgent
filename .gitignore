@@ -1,0 +1,54 @@
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+*.json.key
+*-service-account*.json
+credentials*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Docker
+.dockerignore
+
+# GCP
+cloudbuild.yaml.local
+
+# Firebase
+.firebase/
+firebase-debug.log*
